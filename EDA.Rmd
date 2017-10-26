@@ -5,6 +5,16 @@ output:
     fig_height: 6
     fig_width: 8
 ---
+Plan:
+
+1. Check data
+2. Count words for each author
+3. Prepare word clouds for each author
+4. Document Term Matrix
+5. PCA for DTM
+6. Decission Trees for DTM
+7. XGBoost for DTM
+
 
 ```{r document_setup, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE}
 library(tidyverse)
@@ -36,7 +46,7 @@ library(wordcloud)
 Load data
 
 ```{r}
-train <- fread("../input/train.csv")
+train <- fread("./input/train.csv")
 ```
 
 What's inside?
@@ -98,7 +108,7 @@ train_words_author %>%
 
 Top 20 words and how often authors used them?
 
-```{r}
+```{r fig.height=10}
 train_words_author %>%
    group_by(author) %>%
    top_n(20, n) %>%
@@ -160,7 +170,7 @@ train_words_author %>%
    group_by(author) %>%
    top_n(30, tf_idf) %>%
    arrange(tf_idf) %>%
-   mutate(word = factor(word, levels = word)) %>%
+   mutate(word = factor(word, levels = unique(word))) %>%
    ungroup() %>%
    ggplot() +
    geom_col(aes(word, tf_idf, fill = author)) +
