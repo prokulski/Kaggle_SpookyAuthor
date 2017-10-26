@@ -27,7 +27,7 @@ knitr::opts_chunk$set(message = FALSE, error = FALSE, warning = FALSE)
 
 Get some packages:
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 library(data.table) # for fread()
 
 library(tidyverse)
@@ -40,6 +40,8 @@ Load data
 
 ```{r}
 train <- fread("./input/train.csv")
+test <- fread("./input/test.csv")
+
 ```
 
 What's inside?
@@ -180,35 +182,80 @@ train_words_author %>%
 
 
 ```{r}
-dtm <- train %>%
+train_dtm <- train %>%
    unnest_tokens(word, text) %>%
-   count(id, word) %>%
+   anti_join(stop_words, by = "word") %>%
+   count(author, id, word) %>%
    ungroup() %>%
-   bind_tf_idf(word, id, n) %>%
-   left_join(train %>% select(id, author), by = "id") %>%
-   select(author, id, word, tf_idf)
+   cast_dtm(id, word, n)
 
-ggplot(dtm) + geom_density(aes(tf_idf)) + scale_x_log10()
+
+train_dtm
 ```
 
-
+```{r}
+train_dtm_small <- removeSparseTerms(train_dtm, 0.99)
+train_dtm_small
+```
 
 # PCA for DTM
 
 ```{r}
-dtm_part <- dtm %>% filter(tf_idf > 0.75) %>% spread(word, tf_idf, fill = 0)
+dtm_part <- as.matrix(train_dtm_small)
 
-dtm_part_pca <- dtm_part[-2]
-pca <- princomp(dtm_part_pca[2:nrow(dtm_part_pca)])
+pca <- princomp(dtm_part, cor = TRUE)
 
-cbind(dtm_part_pca[1], pca$scores[,1:2]) %>%
-   unique %>%
+pca_scores <- pca$scores %>%
+   as.data.frame() %>%
+   rownames_to_column("id") %>%
+   left_join(train %>% select(id, author), by = "id")
+
+pca_scores %>%
    ggplot() +
-   geom_point(aes(Comp.1, Comp.2, color = author)) +
+   geom_point(aes(Comp.1, Comp.2, color = author), show.legend = FALSE) +
    facet_wrap(~author)
 ```
 
 
 # Decission Trees for DTM
+
+```{r}
+dtm_train_small_df <- dtm_part %>%
+   as.data.frame() %>%
+   rownames_to_column("id") %>%
+   left_join(train %>% select(id, author), by = "id") %>%
+   select(-id) %>%
+   mutate(author = factor(author))
+
+library(randomForest)
+model_rf <- randomForest(author ~ .,
+                         sample_frac(dtm_train_small_df, 0.75),
+                         ntree = 50,
+                         proximity = TRUE)
+```
+
+
+prepare test data:
+
+```{r}
+test_dtm <- test %>%
+   unnest_tokens(word, text) %>%
+   filter(word %in% train_dtm_small$dimnames$Terms) %>%
+   count(id, word) %>%
+   ungroup() %>%
+   cast_dtm(id, word, n)
+
+test_dtm_df <- as.matrix(test_dtm) %>%
+   as.data.frame() %>%
+   rownames_to_column("id")
+```
+
+Predict:
+```{r}
+test_pred <- predict(model_rf, newdata = test_dtm_df, type = "prob")
+
+test_pred <- cbind(test_dtm_df["id"], test_pred)
+```
+
 # XGBoost for DTM
 
