@@ -1,0 +1,169 @@
+---
+title: "Spooky Author Identification - simple EDA"
+output: 
+  html_document: 
+    fig_height: 6
+    fig_width: 8
+---
+
+```{r document_setup, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE}
+library(tidyverse)
+
+# chunks options
+knitr::opts_chunk$set(message = FALSE, error = FALSE, warning = FALSE)
+
+# some better colours theme :)
+theme_set(theme_minimal() +
+             theme(plot.title = element_text(family = NULL, face = "bold", size = 18, color = "black"),
+                   plot.subtitle = element_text(family = NULL, face = "plain", size = 12, color = "black"),
+                   plot.caption = element_text(family = NULL, face = "italic", size = 9, color = "darkgray"),
+                   plot.background = element_rect(fill="#efefef", color="#aaaaaa"),
+                   panel.background = element_rect(fill = "white", color="black"),
+                   strip.text.x = element_text(face = "bold")))
+```
+
+Get some packages:
+
+```{r}
+library(data.table) # for fread()
+
+library(tidyverse)
+library(tidytext)
+
+library(wordcloud)
+```
+
+Load data
+
+```{r}
+train <- fread("../input/train.csv")
+```
+
+What's inside?
+
+```{r}
+glimpse(train)
+```
+
+Who many authors do we have?
+
+```{r}
+unique(train$author)
+```
+
+Are ids are unique?
+
+```{r}
+length(unique(train$id)) == nrow(train)
+```
+
+TRUE :)
+
+
+
+Let's count words for each author
+
+```{r}
+train_words_author <- train %>%
+   unnest_tokens(word, text) %>%
+   anti_join(stop_words, by = "word") %>%
+   count(author, word) %>%
+   ungroup()
+```
+
+Word cloud for EAP:
+
+```{r}
+train_words_author %>%
+   filter(author == "EAP") %>%
+   with(wordcloud(word, n, max.words = 200, scale = c(1.8, 0.5), colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9]))
+```
+
+Word cloud for HPL:
+
+```{r}
+train_words_author %>%
+   filter(author == "HPL") %>%
+   with(wordcloud(word, n, max.words = 200, scale = c(1.8, 0.5), colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9]))
+```
+
+And word cloud for MWS:
+
+```{r}
+train_words_author %>%
+   filter(author == "MWS") %>%
+   with(wordcloud(word, n, max.words = 200, scale = c(1.8, 0.5), colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9]))
+```
+
+
+Top 20 words and how often authors used them?
+
+```{r}
+train_words_author %>%
+   group_by(author) %>%
+   top_n(20, n) %>%
+   ungroup() %>%
+   ggplot() +
+   geom_tile(aes(author, word, fill = n), color = "gray80") +
+   geom_text(aes(author, word, label = n)) +
+   scale_fill_distiller(palette = "YlOrRd")
+```
+
+Who uses which word?
+
+```{r}
+train_words_author %>%
+   group_by(author) %>%
+   top_n(20, n) %>%
+   ungroup() %>%
+   group_by(word) %>%
+   mutate(p = n/sum(n)) %>%
+   ungroup() %>%
+   ggplot() +
+   geom_col(aes(word, p, fill = author), color = "gray80") +
+   theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust = 1))
+```
+
+Let's see word cloud for all authors togheter
+
+Prepare data:
+
+```{r}
+train_words_all <- train_words_author %>%
+   group_by(word) %>%
+   summarise(n = sum(n)) %>%
+   ungroup()
+
+```
+
+Show cloud:
+
+```{r}
+wordcloud(train_words_all$word, train_words_all$n, max.words = 200, scale = c(1.8, 0.5), colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9])
+```
+
+Similarity of authors:
+
+```{r}
+words_prob <- train_words_author %>%
+   spread(author, n) %>%
+   na.omit()
+
+cor(words_prob[2:4])
+```
+
+TF-IDF
+
+```{r}
+train_words_author %>% 
+   bind_tf_idf(word, author, n) %>%
+   group_by(author) %>%
+   top_n(30, tf_idf) %>%
+   arrange(tf_idf) %>%
+   mutate(word = factor(word, levels = word)) %>%
+   ungroup() %>%
+   ggplot() +
+   geom_col(aes(word, tf_idf, fill = author)) +
+   facet_wrap(~author, scales = "free") +
+   coord_flip()
+```
