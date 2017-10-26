@@ -162,6 +162,23 @@ cor(words_prob[2:4])
 
 # Document Term Matrix
 
+
+
+TF-IDF
+
+```{r}
+train_words_author %>% 
+   bind_tf_idf(word, author, n) %>%
+   group_by(author) %>%
+   top_n(30, tf_idf) %>%
+   ungroup() %>%
+   ggplot() +
+   geom_col(aes(word, tf_idf, fill = author)) +
+   facet_wrap(~author, scales = "free") +
+   coord_flip()
+```
+
+
 ```{r}
 dtm <- train %>%
    unnest_tokens(word, text) %>%
@@ -174,40 +191,24 @@ dtm <- train %>%
 ggplot(dtm) + geom_density(aes(tf_idf)) + scale_x_log10()
 ```
 
-We can cut tf_idf to greater than 1
 
-```{r}
-dtm_part <- dtm %>% filter(tf_idf > 1) %>% spread(word, tf_idf, fill = 0)
-```
 
 # PCA for DTM
 
 ```{r}
+dtm_part <- dtm %>% filter(tf_idf > 0.75) %>% spread(word, tf_idf, fill = 0)
+
 dtm_part_pca <- dtm_part[-2]
 pca <- princomp(dtm_part_pca[2:nrow(dtm_part_pca)])
 
 cbind(dtm_part_pca[1], pca$scores[,1:2]) %>%
    unique %>%
-   ggplot() + geom_point(aes(Comp.1, Comp.2, color = author))
+   ggplot() +
+   geom_point(aes(Comp.1, Comp.2, color = author)) +
+   facet_wrap(~author)
 ```
 
 
 # Decission Trees for DTM
 # XGBoost for DTM
 
-
-TF-IDF
-
-```{r}
-train_words_author %>% 
-   bind_tf_idf(word, author, n) %>%
-   group_by(author) %>%
-   top_n(30, tf_idf) %>%
-   arrange(tf_idf) %>%
-   mutate(word = factor(word, levels = unique(word))) %>%
-   ungroup() %>%
-   ggplot() +
-   geom_col(aes(word, tf_idf, fill = author)) +
-   facet_wrap(~author, scales = "free") +
-   coord_flip()
-```
