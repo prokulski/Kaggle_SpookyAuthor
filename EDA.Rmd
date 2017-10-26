@@ -5,7 +5,14 @@ output:
     fig_height: 6
     fig_width: 8
 ---
-Plan:
+
+
+```{r include=FALSE}
+# chunks options
+knitr::opts_chunk$set(message = FALSE, error = FALSE, warning = FALSE)
+```
+
+# Plan of attack:
 
 1. Check data
 2. Count words for each author
@@ -16,21 +23,7 @@ Plan:
 7. XGBoost for DTM
 
 
-```{r document_setup, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE}
-library(tidyverse)
-
-# chunks options
-knitr::opts_chunk$set(message = FALSE, error = FALSE, warning = FALSE)
-
-# some better colours theme :)
-theme_set(theme_minimal() +
-             theme(plot.title = element_text(family = NULL, face = "bold", size = 18, color = "black"),
-                   plot.subtitle = element_text(family = NULL, face = "plain", size = 12, color = "black"),
-                   plot.caption = element_text(family = NULL, face = "italic", size = 9, color = "darkgray"),
-                   plot.background = element_rect(fill="#efefef", color="#aaaaaa"),
-                   panel.background = element_rect(fill = "white", color="black"),
-                   strip.text.x = element_text(face = "bold")))
-```
+# Check data
 
 Get some packages:
 
@@ -70,6 +63,7 @@ length(unique(train$id)) == nrow(train)
 TRUE :)
 
 
+# Count words for each author
 
 Let's count words for each author
 
@@ -81,7 +75,10 @@ train_words_author <- train %>%
    ungroup()
 ```
 
-Word cloud for EAP:
+
+# Prepare word clouds for each author
+
+## Word cloud for EAP:
 
 ```{r}
 train_words_author %>%
@@ -89,7 +86,7 @@ train_words_author %>%
    with(wordcloud(word, n, max.words = 200, scale = c(1.8, 0.5), colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9]))
 ```
 
-Word cloud for HPL:
+## Word cloud for HPL:
 
 ```{r}
 train_words_author %>%
@@ -97,7 +94,7 @@ train_words_author %>%
    with(wordcloud(word, n, max.words = 200, scale = c(1.8, 0.5), colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9]))
 ```
 
-And word cloud for MWS:
+## Word cloud for MWS:
 
 ```{r}
 train_words_author %>%
@@ -161,6 +158,43 @@ words_prob <- train_words_author %>%
 
 cor(words_prob[2:4])
 ```
+
+
+# Document Term Matrix
+
+```{r}
+dtm <- train %>%
+   unnest_tokens(word, text) %>%
+   count(id, word) %>%
+   ungroup() %>%
+   bind_tf_idf(word, id, n) %>%
+   left_join(train %>% select(id, author), by = "id") %>%
+   select(author, id, word, tf_idf)
+
+ggplot(dtm) + geom_density(aes(tf_idf)) + scale_x_log10()
+```
+
+We can cut tf_idf to greater than 1
+
+```{r}
+dtm_part <- dtm %>% filter(tf_idf > 1) %>% spread(word, tf_idf, fill = 0)
+```
+
+# PCA for DTM
+
+```{r}
+dtm_part_pca <- dtm_part[-2]
+pca <- princomp(dtm_part_pca[2:nrow(dtm_part_pca)])
+
+cbind(dtm_part_pca[1], pca$scores[,1:2]) %>%
+   unique %>%
+   ggplot() + geom_point(aes(Comp.1, Comp.2, color = author))
+```
+
+
+# Decission Trees for DTM
+# XGBoost for DTM
+
 
 TF-IDF
 
