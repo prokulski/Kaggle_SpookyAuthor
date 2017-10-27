@@ -13,6 +13,12 @@ output:
 knitr::opts_chunk$set(message = FALSE, error = FALSE, warning = FALSE)
 ```
 
+# Scores
+
+* Random Forest with 1% of terms (including stopwords) in DTM 0.99658 
+* Random Forest with 100% of terms (including stopwords) in DTM ...
+
+
 # Plan of attack:
 
 1. Check data
@@ -37,7 +43,6 @@ library(stringr)
 
 library(wordcloud)
 library(tm)
-library(corrplot)
 library(corrgram)
 
 library(randomForest)
@@ -351,10 +356,20 @@ Is also looks useless.
 
 # Decission Trees for DTM
 
-```{r}
+```{r randomforest_model}
+# for tests
 train_dtm_small_rf <- train_dtm_small_df %>%
-   select(-id, -kmeans_cluster) %>%
-   mutate(author_name = factor(author_name))
+  select(-id, -kmeans_cluster) %>%
+  mutate(author_name = factor(author_name))
+
+# for competiton
+# needs a lot of memory!
+# train_dtm_small_rf <- as.matrix(train_dtm) %>%
+#    as.data.frame() %>%
+#    rownames_to_column("id") %>%
+#    left_join(train %>% select(id, author_name = author), by = "id") %>%
+#    select(-id) %>%
+#    mutate(author_name = factor(author_name))
 
 # need to change columnames
 colnames(train_dtm_small_rf) <- paste0(colnames(train_dtm_small_rf), "_word")
@@ -363,7 +378,8 @@ train_dtm_small_rf <- rename(train_dtm_small_rf, author_name = author_name_word)
 
 model_rf <- randomForest(author_name ~ .,
                          # do not use sample_frac in competition!
-                         train_dtm_small_rf %>% sample_frac(0.1),
+                         train_dtm_small_rf %>% sample_frac(0.2),
+                         # train_dtm_small_rf,
                          ntree = 50,
                          mtry = 6,
                          proximity = TRUE,
@@ -404,7 +420,7 @@ test_dtm_df <- test %>%
 
 Predict:
 
-```{r}
+```{r randomforest_predict}
 test_pred_rf <- predict(model_rf, newdata = test_dtm_df, type = "prob")
 
 test_pred_rf <- cbind(test_dtm_df["id"], test_pred_rf)
@@ -452,3 +468,9 @@ fwrite(test_pred_rf_submit, file = "RandomForest_submit.csv")
 # XGBoost for DTM
 
 TBC
+
+
+# Keras for DTM
+
+TBC
+
