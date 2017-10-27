@@ -4,6 +4,7 @@ output:
   html_document: 
     fig_height: 6
     fig_width: 8
+    toc: yes
 ---
 
 
@@ -23,34 +24,60 @@ knitr::opts_chunk$set(message = FALSE, error = FALSE, warning = FALSE)
 7. XGBoost for DTM
 
 
-# Check data
+# Preparation
 
-Get some packages:
+**Get some packages:**
 
 ```{r message=FALSE, warning=FALSE}
 library(data.table) # for fread()
 
 library(tidyverse)
 library(tidytext)
+library(stringr)
 
 library(wordcloud)
+library(tm)
+library(corrplot)
+library(corrgram)
+
+library(randomForest)
 ```
 
-Load data
+**Load data**
 
 ```{r}
 train <- fread("./input/train.csv")
 test <- fread("./input/test.csv")
-
 ```
 
-What's inside?
+
+# Check data
+
+**What's inside?**
+
+Train dataset:
 
 ```{r}
 glimpse(train)
 ```
 
-Who many authors do we have?
+
+Test dataset:
+
+```{r}
+glimpse(test)
+```
+
+Does documents from train exists in test?
+
+```{r}
+length(intersect(train$id, train$id))
+```
+
+0 means no.
+
+
+**How many authors do we have?**
 
 ```{r}
 unique(train$author)
@@ -60,9 +87,11 @@ Are ids are unique?
 
 ```{r}
 length(unique(train$id)) == nrow(train)
+length(unique(test$id)) == nrow(test)
 ```
 
-TRUE :)
+Double TRUE - IDs are unique in both datasets.
+
 
 
 # Count words for each author
@@ -72,66 +101,13 @@ Let's count words for each author
 ```{r}
 train_words_author <- train %>%
    unnest_tokens(word, text) %>%
+   # remove stopwords
    anti_join(stop_words, by = "word") %>%
    count(author, word) %>%
    ungroup()
 ```
 
-
-# Prepare word clouds for each author
-
-## Word cloud for EAP:
-
-```{r}
-train_words_author %>%
-   filter(author == "EAP") %>%
-   with(wordcloud(word, n, max.words = 200, scale = c(1.8, 0.5), colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9]))
-```
-
-## Word cloud for HPL:
-
-```{r}
-train_words_author %>%
-   filter(author == "HPL") %>%
-   with(wordcloud(word, n, max.words = 200, scale = c(1.8, 0.5), colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9]))
-```
-
-## Word cloud for MWS:
-
-```{r}
-train_words_author %>%
-   filter(author == "MWS") %>%
-   with(wordcloud(word, n, max.words = 200, scale = c(1.8, 0.5), colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9]))
-```
-
-
-Top 20 words and how often authors used them?
-
-```{r fig.height=10}
-train_words_author %>%
-   group_by(author) %>%
-   top_n(20, n) %>%
-   ungroup() %>%
-   ggplot() +
-   geom_tile(aes(author, word, fill = n), color = "gray80") +
-   geom_text(aes(author, word, label = n)) +
-   scale_fill_distiller(palette = "YlOrRd")
-```
-
-Who uses which word?
-
-```{r}
-train_words_author %>%
-   group_by(author) %>%
-   top_n(20, n) %>%
-   ungroup() %>%
-   group_by(word) %>%
-   mutate(p = n/sum(n)) %>%
-   ungroup() %>%
-   ggplot() +
-   geom_col(aes(word, p, fill = author), color = "gray80") +
-   theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust = 1))
-```
+# Word clouds
 
 Let's see word cloud for all authors togheter
 
@@ -142,120 +118,337 @@ train_words_all <- train_words_author %>%
    group_by(word) %>%
    summarise(n = sum(n)) %>%
    ungroup()
-
 ```
 
-Show cloud:
+Show word cloud:
 
 ```{r}
-wordcloud(train_words_all$word, train_words_all$n, max.words = 200, scale = c(1.8, 0.5), colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9])
+wordcloud(train_words_all$word, train_words_all$n,
+          max.words = 200, scale = c(1.8, 0.5),
+          colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9])
 ```
 
-Similarity of authors:
+Show barplot for top 50 words (by frequency):
+
+```{r}
+theme_set(theme_minimal())
+
+train_words_all %>%
+   top_n(50, n) %>%
+   arrange(n) %>%
+   mutate(word = factor(word, levels = word)) %>%
+   ggplot() +
+      geom_col(aes(word, n), color = "gray80", fill = "lightgreen") +
+      coord_flip()
+
+rm(train_words_all) # won't be needed
+```
+
+# Prepare word clouds for each author
+
+At the begining - two functions for plots:
+
+```{r}
+# word cloud
+AuthorWordCloud <- function(author_id) {
+   train_words_author %>%
+      filter(author == author_id) %>%
+      with(wordcloud(word, n, max.words = 200,
+                     scale = c(1.8, 0.5),
+                     colors = RColorBrewer::brewer.pal(9, "YlOrRd")[3:9]))
+}
+
+# bar plot
+AuthorWordBars <- function(author_id) {
+   train_words_author %>%
+      filter(author == author_id) %>%
+      top_n(50, n) %>%
+      arrange(n) %>%
+      mutate(word = factor(word, levels = word)) %>%
+      ggplot() +
+         geom_col(aes(word, n), color = "gray80", fill = "lightgreen") +
+         coord_flip() +
+         labs(title = paste0("Most frequent words used by ", author_id))
+}
+```
+
+## Word cloud for EAP:
+
+```{r}
+AuthorWordCloud("EAP")
+```
+
+## Barplot for EAP:
+
+```{r}
+AuthorWordBars("EAP")
+```
+
+## Word cloud for HPL:
+
+```{r}
+AuthorWordCloud("HPL")
+```
+
+## Barplot for HPL:
+
+```{r}
+AuthorWordBars("HPL")
+```
+
+## Word cloud for MWS:
+
+```{r}
+AuthorWordCloud("MWS")
+```
+
+## Barplot for MWS:
+
+```{r}
+AuthorWordBars("MWS")
+```
+
+
+Top 20 words and how often authors used them?
+
+```{r fig.height=10}
+train_words_author %>%
+   group_by(author) %>%
+   top_n(20, n) %>%
+   ungroup() %>%
+   group_by(word) %>%
+   mutate(tot_n = sum(n)) %>%
+   ungroup() %>%
+   arrange(desc(tot_n)) %>%
+   mutate(word = factor(word, levels = rev(unique(word)))) %>%
+   ggplot() +
+   geom_point(aes(author, word, size = n, color = n), show.legend = FALSE) +
+   geom_text(aes(author, word, label = n), hjust = -1) +
+   scale_color_distiller(palette = "YlOrRd") +
+   scale_size_continuous(range = c(1, 10))
+```
+
+Who uses which word?
+
+```{r}
+train_words_author %>%
+   group_by(author) %>%
+   top_n(30, n) %>%
+   ungroup() %>%
+   group_by(word) %>%
+   mutate(p = n/sum(n)) %>%
+   ungroup() %>%
+   ggplot() +
+      geom_col(aes(word, p, fill = author), color = "gray80") +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust = 1),
+            legend.position = "bottom")
+```
+
+
+**Similarity of authors:**
 
 ```{r}
 words_prob <- train_words_author %>%
-   spread(author, n) %>%
+   spread(author, n, fill = 0) %>%
    na.omit()
 
-cor(words_prob[2:4])
+words_prob2 <- train_words_author %>%
+   spread(word, n, fill = 0) %>%
+   na.omit()
+
+corrgram(words_prob, lower.panel = panel.shade, upper.panel = panel.cor)
 ```
+
+Does it mean anything? I don't know yet :)
+
+
+**Similarity of words** (20 most popular of them):
+
+```{r}
+words_prob2 <- train_words_author %>%
+   top_n(20, n) %>%
+   spread(word, n, fill = 0) %>%
+   na.omit()
+
+corrgram(words_prob2, lower.panel = panel.shade, upper.panel = panel.cor)
+
+rm(train_words_author, words_prob, words_prob2) # won't be needed
+```
+
+Does it mean anything? I don't think so, but it look interesting :)
 
 
 # Document Term Matrix
 
-
-
-TF-IDF
-
-```{r}
-train_words_author %>% 
-   bind_tf_idf(word, author, n) %>%
-   group_by(author) %>%
-   top_n(30, tf_idf) %>%
-   ungroup() %>%
-   ggplot() +
-   geom_col(aes(word, tf_idf, fill = author)) +
-   facet_wrap(~author, scales = "free") +
-   coord_flip()
-```
-
-
 ```{r}
 train_dtm <- train %>%
    unnest_tokens(word, text) %>%
-   anti_join(stop_words, by = "word") %>%
    count(author, id, word) %>%
    ungroup() %>%
    cast_dtm(id, word, n)
 
-
 train_dtm
 ```
+
+We have big matrix with `r train_dtm$nrow` documents (as rows) and `r train_dtm$ncol` words (as columns).
+
+For a while we can make it smaller by removing about 99% of columns (those sparse ones):
 
 ```{r}
 train_dtm_small <- removeSparseTerms(train_dtm, 0.99)
 train_dtm_small
 ```
 
+With this smaller matrix we can do
+
 # PCA for DTM
 
 ```{r}
-dtm_part <- as.matrix(train_dtm_small)
+train_dtm_small_mat <- as.matrix(train_dtm_small)
 
-pca <- princomp(dtm_part, cor = TRUE)
+pca <- princomp(train_dtm_small_mat, cor = TRUE)
 
 pca_scores <- pca$scores %>%
    as.data.frame() %>%
    rownames_to_column("id") %>%
-   left_join(train %>% select(id, author), by = "id")
+   left_join(train %>% select(id, author_name = author), by = "id")
 
 pca_scores %>%
    ggplot() +
-   geom_point(aes(Comp.1, Comp.2, color = author), show.legend = FALSE) +
-   facet_wrap(~author)
+   geom_point(aes(Comp.1, Comp.2, color = author_name), show.legend = FALSE) +
+   facet_wrap(~author_name)
+
+rm(pca, pca_scores) # remove them
 ```
+
+So PCA seems to be useless...
+
+Mayby k-means then?
+
+# K-means fot DTM
+
+```{r}
+train_dtm_small_df <- train_dtm_small_mat %>%
+   as.data.frame() %>%
+   rownames_to_column("id") %>%
+   left_join(train %>% select(id, author_name = author), by = "id")
+
+rm(train_dtm_small_mat) # save some memory :)
+
+
+train_dtm_small_df$kmeans_cluster <- kmeans(train_dtm_small_df %>% select(-id, -author_name), 3)$cluster
+
+train_dtm_small_df %>%
+   count(kmeans_cluster, author_name) %>%
+   ungroup() %>%
+   ggplot() +
+   geom_tile(aes(kmeans_cluster, author_name, fill = n), color = "gray80") +
+   scale_fill_distiller(palette = "YlOrRd")
+```
+
+Is also looks useless.
 
 
 # Decission Trees for DTM
 
 ```{r}
-dtm_train_small_df <- dtm_part %>%
-   as.data.frame() %>%
-   rownames_to_column("id") %>%
-   left_join(train %>% select(id, author), by = "id") %>%
-   select(-id) %>%
-   mutate(author = factor(author))
+train_dtm_small_rf <- train_dtm_small_df %>%
+   select(-id, -kmeans_cluster) %>%
+   mutate(author_name = factor(author_name))
 
-library(randomForest)
-model_rf <- randomForest(author ~ .,
-                         sample_frac(dtm_train_small_df, 0.75),
+# need to change columnames
+colnames(train_dtm_small_rf) <- paste0(colnames(train_dtm_small_rf), "_word")
+train_dtm_small_rf <- rename(train_dtm_small_rf, author_name = author_name_word)
+
+
+model_rf <- randomForest(author_name ~ .,
+                         # do not use sample_frac in competition!
+                         train_dtm_small_rf %>% sample_frac(0.1),
                          ntree = 50,
-                         proximity = TRUE)
+                         mtry = 6,
+                         proximity = TRUE,
+                         importance = TRUE)
 ```
 
-
-prepare test data:
+Look at confusion matrix:
 
 ```{r}
-test_dtm <- test %>%
+model_rf$confusion
+```
+
+Variables importance:
+
+```{r}
+varImpPlot(model_rf)
+```
+
+Mostly stop words - it doesn't dobe well...
+
+
+But we need to check this. Fisrt prepare test data:
+
+```{r}
+words_in_train <- train_dtm_small$dimnames$Terms
+
+test_dtm_df <- test %>%
    unnest_tokens(word, text) %>%
-   filter(word %in% train_dtm_small$dimnames$Terms) %>%
    count(id, word) %>%
    ungroup() %>%
-   cast_dtm(id, word, n)
-
-test_dtm_df <- as.matrix(test_dtm) %>%
+   filter(word %in% words_in_train) %>%
+   mutate(word = paste0(word, "_word")) %>%
+   cast_dtm(id, word, n) %>%
+   as.matrix() %>%
    as.data.frame() %>%
    rownames_to_column("id")
 ```
 
 Predict:
-```{r}
-test_pred <- predict(model_rf, newdata = test_dtm_df, type = "prob")
 
-test_pred <- cbind(test_dtm_df["id"], test_pred)
+```{r}
+test_pred_rf <- predict(model_rf, newdata = test_dtm_df, type = "prob")
+
+test_pred_rf <- cbind(test_dtm_df["id"], test_pred_rf)
 ```
+
+Do we have all IDs from test dataset in our predictions?
+
+```{r}
+nrow(test_pred_rf) == nrow(test)
+```
+
+No, something is missing :( What is it:
+
+```{r}
+filter(test, !id %in% test_pred_rf$id)
+```
+
+So let's add dummy variables for missing IDs:
+
+```{r}
+dummy <- test %>%
+   filter(!id %in% test_pred_rf$id) %>%
+   select(id) %>%
+   mutate(EAP = 1/3,
+          HPL = 1/3,
+          MWS = 1/3)
+
+test_pred_rf_submit <- bind_rows(test_pred_rf, dummy)
+```
+
+Check once more time:
+
+```{r}
+nrow(test_pred_rf_submit) == nrow(test)
+filter(test, !id %in% test_pred_rf_submit$id)
+```
+
+Same number of rows, no missing ID - we can submit our prediction!
+
+```{r}
+fwrite(test_pred_rf_submit, file = "RandomForest_submit.csv")
+```
+
 
 # XGBoost for DTM
 
+TBC
