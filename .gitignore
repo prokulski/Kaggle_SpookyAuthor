@@ -4,4 +4,8 @@
 .Ruserdata
 Kaggle_SpookyAuthor.Rproj
 EDA.html
-subbition.csv
+README.html
+submit_NaiveBayes.csv
+submit_RandomForest.csv
+submit_SVM.csv
+submit_xgb.csv

@@ -2,10 +2,16 @@
 title: "Spooky Author Identification - simple EDA"
 output: 
   html_document: 
-    fig_height: 6
+    fig_height: 8
     fig_width: 8
+    number_sections: true
     toc: yes
 ---
+
+```{r filepaths, echo=FALSE}
+train_csv <- "./input/train.csv"
+test_csv <- "./input/test.csv"
+```
 
 
 ```{r include=FALSE}
@@ -13,23 +19,49 @@ output:
 knitr::opts_chunk$set(message = FALSE, error = FALSE, warning = FALSE)
 ```
 
-# Scores
+# Summary
 
-* Random Forest with 1% of terms (including stopwords) in DTM 0.99658 
-* Random Forest with 100% of terms (including stopwords) in DTM ...
+## Scores
 
-# Plan of attack:
+### with 1% of terms (including stopwords) in DTM:
 
-1. Check data
-2. Count words for each author
-3. Prepare word clouds for each author
-4. Document Term Matrix
-5. PCA for DTM
-6. Decission Trees for DTM
-7. XGBoost for DTM
+* Random Forest, 10% train data = **0.97807**
+* Random Forest, 100% train data = ...
+* NaiveBayes, 10% train data = 10.04936
+* NaiveBayes, 100% train data = ...
+* SVM, 10% train data = ...
+* SVM, 100% train data = ...
+* XGBoost, 10% train data = 1.18739
+* XGBoost, 100% train data = ...
+
+### with 100% of terms (including stopwords) in DTM:
+
+* Random Forest, 100% train data = ...
+* NaiveBayes, 100% train data = ...
+* SVM, 100% train data = ...
+* XGBoost, 100% train data = ...
+
+(I need time and bigger machine :)
 
 
-# Preparation
+## ToDo
+
+New variables:
+
+* number od words in document
+* mean number of chars in document
+* number of stop words in document
+* number of punctations in document
+
+Others:
+
+* find best class of model (Random Forest, Naive Bayes, SVM, XGBoost) - submit and check leaderboard :)
+* tune parameters for this model
+
+
+
+
+# Packages and loading datasets
 
 **Get some packages:**
 
@@ -51,9 +83,13 @@ library(xgboost) # XGBoost
 
 **Load data**
 
-```{r}
-train <- fread("./input/train.csv")
-test <- fread("./input/test.csv")
+```{r echo=FALSE}
+train <- fread(train_csv)
+test <- fread(test_csv)
+```
+```{r eval=FALSE}
+train <- fread("../input/train.csv")
+test <- fread("../input/test.csv")
 ```
 
 
@@ -150,7 +186,45 @@ train_words_all %>%
 rm(train_words_all) # won't be needed
 ```
 
-# Prepare word clouds for each author
+
+**Top 20 words and how often authors used them?**
+
+```{r fig.height=10}
+train_words_author %>%
+   group_by(author) %>%
+   top_n(20, n) %>%
+   ungroup() %>%
+   group_by(word) %>%
+   mutate(tot_n = sum(n)) %>%
+   ungroup() %>%
+   arrange(desc(tot_n)) %>%
+   mutate(word = factor(word, levels = rev(unique(word)))) %>%
+   ggplot() +
+   geom_point(aes(author, word, size = n, color = n), show.legend = FALSE) +
+   geom_text(aes(author, word, label = n), hjust = -1) +
+   scale_color_distiller(palette = "YlOrRd") +
+   scale_size_continuous(range = c(1, 10))
+```
+
+**Who uses which word?**
+
+```{r}
+train_words_author %>%
+   group_by(author) %>%
+   top_n(30, n) %>%
+   ungroup() %>%
+   group_by(word) %>%
+   mutate(p = n/sum(n)) %>%
+   ungroup() %>%
+   ggplot() +
+      geom_col(aes(word, p, fill = author), color = "gray80") +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust = 1),
+            legend.position = "bottom")
+```
+
+
+
+## Word clouds for each author
 
 At the begining - two functions for plots:
 
@@ -180,80 +254,58 @@ AuthorWordBars <- function(author_id) {
 }
 ```
 
-## Word cloud for EAP:
+### Edgar Allan Poe {.tabset .tabset-fade .tabset-pills}
+
+![Edgar Allan Poe](https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Edgar_Allan_Poe_2.jpg/192px-Edgar_Allan_Poe_2.jpg)
+
+#### Word cloud
 
 ```{r}
 AuthorWordCloud("EAP")
 ```
 
-## Barplot for EAP:
+#### Barplot
 
 ```{r}
 AuthorWordBars("EAP")
 ```
 
-## Word cloud for HPL:
+### Howard Phillips Lovecraft {.tabset .tabset-fade .tabset-pills}
+
+![Howard Phillips Lovecraft](https://upload.wikimedia.org/wikipedia/commons/a/a2/Howard_Phillips_Lovecraft_in_1915.jpg)
+
+#### Word cloud
 
 ```{r}
 AuthorWordCloud("HPL")
 ```
 
-## Barplot for HPL:
+#### Barplot
 
 ```{r}
 AuthorWordBars("HPL")
 ```
 
-## Word cloud for MWS:
+### Mary Wollstonecraft Shelley {.tabset .tabset-fade .tabset-pills}
+
+![Mary Wollstonecraft Shelley](https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/RothwellMaryShelley.jpg/195px-RothwellMaryShelley.jpg)
+
+#### Word cloud
 
 ```{r}
 AuthorWordCloud("MWS")
 ```
 
-## Barplot for MWS:
+#### Barplot
 
 ```{r}
 AuthorWordBars("MWS")
 ```
 
 
-Top 20 words and how often authors used them?
+# Similarity
 
-```{r fig.height=10}
-train_words_author %>%
-   group_by(author) %>%
-   top_n(20, n) %>%
-   ungroup() %>%
-   group_by(word) %>%
-   mutate(tot_n = sum(n)) %>%
-   ungroup() %>%
-   arrange(desc(tot_n)) %>%
-   mutate(word = factor(word, levels = rev(unique(word)))) %>%
-   ggplot() +
-   geom_point(aes(author, word, size = n, color = n), show.legend = FALSE) +
-   geom_text(aes(author, word, label = n), hjust = -1) +
-   scale_color_distiller(palette = "YlOrRd") +
-   scale_size_continuous(range = c(1, 10))
-```
-
-Who uses which word?
-
-```{r}
-train_words_author %>%
-   group_by(author) %>%
-   top_n(30, n) %>%
-   ungroup() %>%
-   group_by(word) %>%
-   mutate(p = n/sum(n)) %>%
-   ungroup() %>%
-   ggplot() +
-      geom_col(aes(word, p, fill = author), color = "gray80") +
-      theme(axis.text.x = element_text(angle = 90, vjust = 0, hjust = 1),
-            legend.position = "bottom")
-```
-
-
-**Similarity of authors:**
+## Similarity of authors
 
 ```{r}
 words_prob <- train_words_author %>%
@@ -270,7 +322,9 @@ corrgram(words_prob, lower.panel = panel.shade, upper.panel = panel.cor)
 Does it mean anything? I don't know yet :)
 
 
-**Similarity of words** (20 most popular of them):
+## Similarity of words
+
+(20 most popular of them):
 
 ```{r}
 words_prob2 <- train_words_author %>%
@@ -359,6 +413,11 @@ Is also looks useless.
 
 # Decission Trees for DTM
 
+```{r}
+# start timer
+timer <- Sys.time()
+```
+
 ```{r randomforest_model}
 # for tests
 train_dtm_small_rf <- train_dtm_small_df %>%
@@ -389,6 +448,8 @@ model_rf <- randomForest(author_name ~ .,
                          proximity = TRUE,
                          importance = TRUE)
 ```
+
+It took `r Sys.time() - timer` seconds.
 
 Look at confusion matrix:
 
@@ -424,11 +485,18 @@ test_dtm_df <- test %>%
 
 **Predict:**
 
+```{r}
+# start timer
+timer <- Sys.time()
+```
+
 ```{r randomforest_predict}
 test_pred_rf <- predict(model_rf, newdata = test_dtm_df, type = "prob")
 
 test_pred_rf <- cbind(test_dtm_df["id"], test_pred_rf)
 ```
+
+It took `r Sys.time() - timer` seconds.
 
 Do we have all IDs from test dataset in our predictions?
 
@@ -474,6 +542,11 @@ rm(model_rf, test_pred_rf, dummy, test_pred_rf_submit)
 
 # Navie Bayes for DTM
 
+```{r}
+# start timer
+timer <- Sys.time()
+```
+
 ```{r naivebayes}
 model_nb <- naiveBayes(author_name ~ .,
                        data = train_dtm_small_rf,
@@ -498,9 +571,15 @@ fwrite(test_pred_bayes_submit, file = "submit_NaiveBayes.csv")
 rm(model_nb, pred_bayes, test_pred_bayes, dummy, test_pred_bayes_submit)
 ```
 
+It took `r Sys.time() - timer` seconds.
 
 
 # Support Vector Machines on DTM
+
+```{r}
+# start timer
+timer <- Sys.time()
+```
 
 ```{r svm}
 model_svm <- svm(author_name ~ .,
@@ -525,8 +604,15 @@ test_pred_svm_submit <- bind_rows(test_pred_svm, dummy)
 fwrite(test_pred_svm_submit, file = "submit_SVM.csv")
 ```
 
+It took `r Sys.time() - timer` seconds.
+
 
 # XGBoost for DTM
+
+```{r}
+# start timer
+timer <- Sys.time()
+```
 
 ```{r xgboost}
 xgb_train <- train_dtm_small_rf %>% sample_frac(0.1)
@@ -573,7 +659,16 @@ test_pred_xgb_submit <- bind_rows(test_pred_xgb, dummy)
 fwrite(test_pred_xgb_submit, file = "submit_xgb.csv")
 ```
 
+It took `r Sys.time() - timer` seconds.
+
 # Keras for DTM
 
 TBD
 
+
+
+# Last word
+
+If you've liked - please upvote!
+
+And - if you are reading in polish - go to [my web page, there is a lot of R](http://prokulski.net/?utm_source=kaggle&utm_medium=spooky_kernel).
