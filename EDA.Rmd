@@ -7,14 +7,11 @@ output:
     number_sections: true
     toc: yes
 ---
-
 ```{r filepaths, echo=FALSE}
 train_csv <- "./input/train.csv"
 test_csv <- "./input/test.csv"
-```
+sample_fraction <- 0.2
 
-
-```{r include=FALSE}
 # chunks options
 knitr::opts_chunk$set(message = FALSE, error = FALSE, warning = FALSE)
 ```
@@ -86,6 +83,7 @@ library(xgboost) # XGBoost
 ```{r echo=FALSE}
 train <- fread(train_csv)
 test <- fread(test_csv)
+sample_fraction <- 0.1
 ```
 ```{r eval=FALSE}
 train <- fread("../input/train.csv")
@@ -345,6 +343,9 @@ Does it mean anything? I don't think so, but it look interesting :)
 ```{r}
 train_dtm <- train %>%
    unnest_tokens(word, text) %>%
+   mutate(word = gsub(".", "", word, fixed = TRUE)) %>%
+   mutate(word = gsub("'", "", word, fixed = TRUE)) %>%
+   mutate(word = stemDocument(word)) %>%
    count(author, id, word) %>%
    ungroup() %>%
    cast_dtm(id, word, n)
@@ -354,10 +355,10 @@ train_dtm
 
 We have big matrix with `r train_dtm$nrow` documents (as rows) and `r train_dtm$ncol` words (as columns).
 
-For a while we can make it smaller by removing about 99% of columns (those sparse ones):
+For a while we can make it smaller by removing about 99.7% of columns (those sparse ones):
 
 ```{r}
-train_dtm_small <- removeSparseTerms(train_dtm, 0.99)
+train_dtm_small <- removeSparseTerms(train_dtm, 0.997)
 train_dtm_small
 ```
 
@@ -442,7 +443,7 @@ train_dtm_small_rf <- rename(train_dtm_small_rf, author_name = author_name_word)
 
 model_rf <- randomForest(author_name ~ .,
                          # do not use sample_frac in competition!
-                         train_dtm_small_rf %>% sample_frac(0.1),
+                         train_dtm_small_rf %>% sample_frac(sample_fraction),
                          ntree = 50,
                          mtry = 6,
                          proximity = TRUE,
@@ -473,6 +474,9 @@ words_in_train <- train_dtm_small$dimnames$Terms
 
 test_dtm_df <- test %>%
    unnest_tokens(word, text) %>%
+   mutate(word = gsub(".", "", word, fixed = TRUE)) %>%
+   mutate(word = gsub("'", "", word, fixed = TRUE)) %>%
+   mutate(word = stemDocument(word)) %>%
    count(id, word) %>%
    ungroup() %>%
    filter(word %in% words_in_train) %>%
@@ -583,7 +587,7 @@ timer <- Sys.time()
 
 ```{r svm}
 model_svm <- svm(author_name ~ .,
-                 data = train_dtm_small_rf %>% sample_frac(0.1),
+                 data = train_dtm_small_rf %>% sample_frac(sample_fraction),
                  type = "nu-classification",
                  probability = TRUE)
 
@@ -615,7 +619,7 @@ timer <- Sys.time()
 ```
 
 ```{r xgboost}
-xgb_train <- train_dtm_small_rf %>% sample_frac(0.1)
+xgb_train <- train_dtm_small_rf %>% sample_frac(sample_fraction)
 
 xgb_train_X <- xgb_train %>% select(-author_name) %>% as.matrix() 
 xgb_train_Y <- as.numeric(xgb_train$author_name)-1
@@ -627,14 +631,14 @@ xgb_params = list(
    booster = "gbtree",
    eta = 0.1,
    max_depth = 6,
-   subsample = 0.8
+   subsample = 1
 )
 
 
 
 model_xgb <- xgb.train(data = xgb.DMatrix(xgb_train_X, label = xgb_train_Y),
 				  params = xgb_params,
-				  nrounds = 50,
+				  nrounds = 100,
 				  verbose = 1)
 
 
@@ -660,6 +664,45 @@ fwrite(test_pred_xgb_submit, file = "submit_xgb.csv")
 ```
 
 It took `r Sys.time() - timer` seconds.
+
+
+Variable importance:
+
+```{r}
+importance_matrix <- xgb.importance(colnames(xgb_train_X), model = model_xgb)
+
+importance_matrix %>%
+   top_n(30, Gain) %>%
+   mutate(Feature = gsub("_word", "", Feature, fixed = TRUE)) %>%
+   arrange(Gain) %>%
+   mutate(Feature = factor(Feature, levels = Feature)) %>%
+   ggplot() +
+   geom_col(aes(Feature, Gain)) +
+   coord_flip() +
+   labs(x = "Word")
+
+
+importance_matrix %>%
+   top_n(30, Cover) %>%
+   mutate(Feature = gsub("_word", "", Feature, fixed = TRUE)) %>%
+   arrange(Cover) %>%
+   mutate(Feature = factor(Feature, levels = Feature)) %>%
+   ggplot() +
+   geom_col(aes(Feature, Cover)) +
+   coord_flip() +
+   labs(x = "Word")
+
+
+importance_matrix %>%
+   top_n(30, Frequence) %>%
+   mutate(Feature = gsub("_word", "", Feature, fixed = TRUE)) %>%
+   arrange(Frequence) %>%
+   mutate(Feature = factor(Feature, levels = Feature)) %>%
+   ggplot() +
+   geom_col(aes(Feature, Frequence)) +
+   coord_flip() +
+   labs(x = "Word")
+```
 
 # Keras for DTM
 
